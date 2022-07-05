@@ -1,9 +1,9 @@
 DMRG interface
 ==============
 
-2021-02-27
+2022-07-05
 
-* Version 0.1
+* Version 0.1.1
 
 Install
 -------
@@ -23,11 +23,12 @@ echo 'export PYSCF_EXT_PATH=/home/abc/local/path:$PYSCF_EXT_PATH' >> ~/.bashrc
 You can find more details of extended modules in the document
 [extension modules](http://pyscf.org/install.html#extension-modules)
 
-* Using DMRG as the FCI solver for CASSCF.  There are two DMRG solver
+* Using DMRG as the FCI solver for CASSCF.  There are three DMRG solver
   interfaces implemented in this module
 
       Block (https://pyscf.org/Block/) or block2 (https://pypi.org/project/block2/)
       CheMPS2 (https://github.com/SebWouters/CheMPS2)
+      QCMaquis (https://github.com/qcscine/qcmaquis)
 
   After installing the DMRG solver, create a file dmrgscf/settings.py
   to store the path where the DMRG solver was installed.
