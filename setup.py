@@ -14,7 +14,7 @@
 # limitations under the License.
 
 NAME = 'pyscf-dmrgscf'
-DESCRIPTION  = 'DMRG interface to call Block code in PySCF'
+DESCRIPTION  = 'DMRG interface to call the (Stack)Block, CheMPS2 or QCMaquis code in PySCF'
 SO_EXTENSIONS = { 'pyscf.lib.libunpack': ['pyscf/dmrgscf/unpack.c']
 }
 DEPENDENCIES = ['pyscf', 'numpy']
