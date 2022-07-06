@@ -44,6 +44,7 @@ if not metadata.get('VERSION', None):
     VERSION = guess_version()
 
 pyscf_lib_dir = os.path.join(topdir, 'pyscf', 'lib')
+os.makedirs(pyscf_lib_dir, exist_ok=True)
 def make_ext(pkg_name, srcs,
              libraries=[], library_dirs=[pyscf_lib_dir],
              include_dirs=[], extra_compile_flags=[],
