@@ -18,7 +18,7 @@
 
 '''DMRG program interface.
 
-There are two DMRG program interfaces available:
+There are three DMRG program interfaces available:
 
     * `Block <https://github.com/sanshar/Block>`_ interface provided the
       features including the DMRG-CASCI, the 1-step and 2-step DMRG-CASSCF, second
@@ -27,6 +27,9 @@ There are two DMRG program interfaces available:
 
     * `CheMPS2 <https://github.com/SebWouters/CheMPS2>`_ interface provided the
       DMRG-CASCI and 2-step DMRG-CASSCF.
+
+    * `QCMaquis <https://github.com/qcscine/qcmaquis>`_ interface provided the 
+	features including DMRG-CASCI and 2-step DMRG-CASSCF.
 
 Simple usage::
 
@@ -99,13 +102,22 @@ In :class:`CheMPS2`, DMRG calculation can be controlled by:
 
 See http://sebwouters.github.io/CheMPS2/index.html for more detail usages of
 these keywords.
-'''
 
-__version__ = '0.1.0'
+QCMaquis
+--------
+:class:`QCMaquis` is the main object to hold QCMaquis input parameters and results.
+:func:`qcmDMRGCI`  is a shortcut function quickly setup a DMRG-driven CASCI calculation.
+:func:`qcmDMRGSCF` is a shortcut function quickly setup a DMRG-driven CASSCF calculation.
+'''
+__version__ = '0.1.1'
 
 from pyscf.dmrgscf import dmrgci
 from pyscf.dmrgscf.dmrgci import DMRGCI, DMRGSCF, dryrun
 
 from pyscf.dmrgscf import chemps2
 from pyscf.dmrgscf.chemps2 import CheMPS2
+
+from pyscf.dmrgscf import qcmaquis
+from pyscf.dmrgscf.qcmaquis import qcmDMRGCI
+# from pyscf.dmrgscf.qcmaquis import qcmDMRGCI, qcmDMRGSCF
 
