@@ -50,6 +50,24 @@ except ImportError:
 # Libraries
 libqcm = lib.load_library(settings.QCMLIB)
 
+# fcidumpFromIntegral = libqcm.fcidumpFromIntegral
+# fcidumpFromIntegral.restype = None
+# fcidumpFromIntegral.argtypes = [
+#     ctypes.c_char_p,
+#     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+#     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+#     ctypes.c_size_t,
+#     ctypes.c_size_t,
+#     ctypes.c_double,
+#     ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+#     ctypes.c_size_t,
+# ]
+sayhello = libqcm.qcmaquis_interface_say_hello
+sayhello.restype = None
+sayhello.argtypes = [
+    ctypes.c_char_p,
+]
+
 class qcmDMRGCI(lib.StreamObject):
     '''QCMaquis program interface and the object to hold QCMaquis program input parameters.
 
@@ -67,6 +85,10 @@ class qcmDMRGCI(lib.StreamObject):
     def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1, memory=None):
         self.mol = mol
         print("hello my friend")
+        string1 = "YEAH!"
+        # create byte objects from the strings
+        b_string1 = string1.encode('utf-8')
+        sayhello(b_string1)
         if mol is None:
             self.stdout = sys.stdout
             self.verbose = logger.NOTE
