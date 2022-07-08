@@ -51,18 +51,6 @@ except ImportError:
 # Libraries
 libqcm = lib.load_library(settings.QCMLIB)
 
-# fcidumpFromIntegral = libqcm.fcidumpFromIntegral
-# fcidumpFromIntegral.restype = None
-# fcidumpFromIntegral.argtypes = [
-#     ctypes.c_char_p,
-#     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-#     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-#     ctypes.c_size_t,
-#     ctypes.c_size_t,
-#     ctypes.c_double,
-#     ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
-#     ctypes.c_size_t,
-# ]
 sayhello = libqcm.qcmaquis_interface_say_hello
 sayhello.restype = None
 sayhello.argtypes = [
@@ -81,11 +69,13 @@ qcmINIT.argtypes = [
     ctypes.c_int32,
     ctypes.c_int32,
     ctypes.c_int32,
-    ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    # ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    ctypes.c_void_p,
     ctypes.c_double,
     ctypes.c_int32,
     ctypes.c_int32,
-    ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    # ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    ctypes.c_void_p,
     ctypes.c_int32,
     ctypes.c_char_p,
     ctypes.c_bool,
@@ -109,6 +99,21 @@ qcmUPINT.argtypes = [
     ctypes.c_int32,
 ]
 
+qcmSETSTATE = libqcm.qcmaquis_interface_set_state
+qcmSETSTATE.restype = None
+qcmSETSTATE.argtypes = [
+    ctypes.c_int32,
+]
+
+qcmOPT = libqcm.qcmaquis_interface_optimize
+qcmOPT.restype = None
+qcmOPT.argtypes = [
+]
+
+qcmENERGY = libqcm.qcmaquis_interface_get_energy
+qcmENERGY.restype = ctypes.c_double
+qcmENERGY.argtypes = [
+]
 
 
 class qcmDMRGCI(lib.StreamObject):
@@ -126,7 +131,7 @@ class qcmDMRGCI(lib.StreamObject):
     -74.379770619390698
     '''
     def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1,
-                 maxIter=10):
+                 maxIter=10, project="myQCM"):
         self.mol = mol
         print("hello my friend")
         string1 = "YEAH!"
@@ -154,6 +159,7 @@ class qcmDMRGCI(lib.StreamObject):
         else:
             self.maxM = maxM
         self.num_thrds= num_thrds
+        self.project = project
         self.restart = False
         self.onlywriteIntegral = False
         self.spin = 0
@@ -165,6 +171,8 @@ class qcmDMRGCI(lib.StreamObject):
                 self.groupname = mol.groupname
             else:
                 self.groupname = None
+            if mol.spin:
+                self.spin = mol.spin
         ##################################################
         # don't modify the following attributes, if you do not finish part of calculation, which can be reused.
         #DO NOT CHANGE these parameters, unless you know the code in details
@@ -238,19 +246,15 @@ class qcmDMRGCI(lib.StreamObject):
         if 'orbsym' in kwargs:
             self.orbsym = kwargs['orbsym']
 
-        ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
         print('hello from kernel - sz is {}'.format(qcmDMRGCI.get_size12(norb = norb)))
         print('hello from kernel - 1e ints are')
         print(h1e)
         print('hello from kernel - 2e ints are')
         print(eri)
         print('hello from kernel - ecore is {}'.format(ecore))
+
+        ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
         setHAM(self, h1e, eri, norb, nelec, ecore)
-        #writeDMRGConfFile(self, nelec, fciRestart)
-        #if self.verbose >= logger.DEBUG1:
-        #    inFile = os.path.join(self.runtimeDir, self.configFile)
-        #    logger.debug1(self, 'Block Input conf')
-        #    logger.debug1(self, open(inFile, 'r').read())
         if self.onlywriteIntegral:
             logger.info(self, 'Only write integral')
             try:
@@ -264,38 +268,65 @@ class qcmDMRGCI(lib.StreamObject):
         if self.returnInt:
             return h1e, eri
 
-        # executeBLOCK(self)
-        # if self.verbose >= logger.DEBUG1:
-        #     outFile = os.path.join(self.runtimeDir, self.outputFile)
-        #     logger.debug1(self, open(outFile).read())
-        # calc_e = readEnergy(self)
+        ''' setup QCMaquis configuration '''
+        setQCM(self, norb, nelec)
+        ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
+        runQCM(self, self.nroots)
+        calc_e = eneQCM(self)
         # if self.restart:
         #     # Restart only the first iteration
         #     self.restart = False
-        calc_e = 0.0 # readEnergy(self)
-
+        print("Optimized energy: {}".format(calc_e))
         return calc_e, roots
 
 def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
 
+    ueri, ieri, nint = get_unique_eri(h1e, eri, ecore, norb)
+    print(ueri)
+    print(ieri)
+    # print(ueri.flags['C_CONTIGUOUS'])
+    # print(ieri.flags['C_CONTIGUOUS'])
+    qcmUPINT(ieri, ueri, nint)
+
+def setQCM(qcmDMRGCI, norb, nelec):
+
+    nele = 0
     if isinstance(nelec, (int, numpy.integer)):
-        neleca = nelec//2 + nelec%2
-        nelecb = nelec - neleca
-    else :
-        neleca, nelecb = nelec
+       nele = nelec
+    else:
+       nele = nelec[0]+nelec[1]
 
-    ueri, ieri = get_unique_eri(eri,norb)
-    # qcmUPINT()
+    # DOES NOT work for symmetry yet, this requires the first none to provide the orbital symmetries
+    qcmINIT(nele, norb, qcmDMRGCI.spin, (qcmDMRGCI.wfnsym - 1),
+            None, qcmDMRGCI.tol, qcmDMRGCI.maxM, qcmDMRGCI.maxIter,
+            None, -1, qcmDMRGCI.project.encode('utf-8'), qcmDMRGCI.twopdm)
 
-def get_unique_eri(eri, nmo, tol=1e-99):
+def runQCM(qcmDMRGCI, state):
+
+    # update # of sweeps
+    # qcmaquis_interface_set_nsweeps(nsweeps_,ngrowsweeps_,nmainsweeps_);
+
+    # set I/O files for state i
+    qcmSETSTATE(state);
+
+    # given state i: optimize MPS + calculate <MPS|O|MPS> for a list of O's
+    qcmOPT();
+
+def eneQCM(qcmDMRGCI):
+
+    # extract state-specific electronic energy after MPS optimization
+    return qcmENERGY();
+
+def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
     npair = nmo*(nmo+1)//2
 
-    dim_eri = npair*(npair+1)//2
+    #                2e-             1e-   core-energy
+    dim_eri = npair*(npair+1)//2 + npair + 1
 
     ueri = numpy.zeros( (  dim_eri) )
     ieri = numpy.zeros( (4*dim_eri), dtype=numpy.int32 )
 
-    # assumes 4-fold symmetry (default in pySCF)
+    # 2e-part: assumes 4-fold symmetry for eri (default in pySCF)
     if eri.ndim == 2: # 4-fold symmetry
         assert(eri.size == npair**2)
         ij = 0
@@ -309,12 +340,25 @@ def get_unique_eri(eri, nmo, tol=1e-99):
                             if abs(eri[ij,kl]) > tol:
                                 print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ij,kl]))
                                 ueri[uindex] = eri[ij,kl]
-                                ieri[uindex] = i
-                                ieri[uindex+1] = j
-                                ieri[uindex+2] = k
-                                ieri[uindex+3] = l
+                                ieri[4*uindex] = i
+                                ieri[4*uindex+1] = j
+                                ieri[4*uindex+2] = k
+                                ieri[4*uindex+3] = l
                                 uindex += 1
                         kl += 1
                 ij += 1
-    return ueri, ieri
+
+    # 1e-part
+    ij = 0
+    for i in range(nmo):
+        for j in range(0, i+1):
+            if abs(h1e[i,j]) > tol:
+                print('({},{}) = {} '.format(i+1, j+1,h1e[i,j]))
+                ueri[uindex] = h1e[i,j]
+                ieri[4*uindex] = i
+                ieri[4*uindex+1] = j
+                uindex += 1
+    # ecore
+    ueri[uindex] = ecore
+    return numpy.ascontiguousarray(ueri), numpy.ascontiguousarray(ieri,dtype=numpy.int32), dim_eri
 
