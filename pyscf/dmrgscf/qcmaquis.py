@@ -51,12 +51,6 @@ except ImportError:
 # Libraries
 libqcm = lib.load_library(settings.QCMLIB)
 
-sayhello = libqcm.qcmaquis_interface_say_hello
-sayhello.restype = None
-sayhello.argtypes = [
-    ctypes.c_char_p,
-]
-
 # qcmINIT = libqcm.qcmaquis_interface_preinit(int nel, int L, int spin, int irrep,
 #                                 const int* site_types, V conv_thresh, int m, int nsweeps,
 #                                 const int* sweep_m, int nsweepm, const char* project_name,
@@ -133,10 +127,6 @@ class qcmDMRGCI(lib.StreamObject):
     def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1,
                  maxIter=10, project="myQCM"):
         self.mol = mol
-        print("hello my friend")
-        string1 = "YEAH!"
-        # create byte objects from the strings
-        sayhello(string1.encode('utf-8'))
         if mol is None:
             self.stdout = sys.stdout
             self.verbose = logger.NOTE
@@ -270,13 +260,14 @@ class qcmDMRGCI(lib.StreamObject):
 
         ''' setup QCMaquis configuration '''
         setQCM(self, norb, nelec)
-        ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
-        runQCM(self, self.nroots)
-        calc_e = eneQCM(self)
-        # if self.restart:
-        #     # Restart only the first iteration
-        #     self.restart = False
-        print("Optimized energy: {}".format(calc_e))
+        ''' run QCMaquis '''
+        for i in range(0,self.nroots):
+            runQCM(self, i)
+            calc_e = eneQCM(self)
+            # if self.restart:
+            #     # Restart only the first iteration
+            #     self.restart = False
+            print("Optimized energy: {}".format(calc_e))
         return calc_e, roots
 
 def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
@@ -340,10 +331,10 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
                             if abs(eri[ij,kl]) > tol:
                                 print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ij,kl]))
                                 ueri[uindex] = eri[ij,kl]
-                                ieri[4*uindex] = i
-                                ieri[4*uindex+1] = j
-                                ieri[4*uindex+2] = k
-                                ieri[4*uindex+3] = l
+                                ieri[4*uindex] = i+1
+                                ieri[4*uindex+1] = j+1
+                                ieri[4*uindex+2] = k+1
+                                ieri[4*uindex+3] = l+1
                                 uindex += 1
                         kl += 1
                 ij += 1
@@ -355,8 +346,8 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
             if abs(h1e[i,j]) > tol:
                 print('({},{}) = {} '.format(i+1, j+1,h1e[i,j]))
                 ueri[uindex] = h1e[i,j]
-                ieri[4*uindex] = i
-                ieri[4*uindex+1] = j
+                ieri[4*uindex] = i+1
+                ieri[4*uindex+1] = j+1
                 uindex += 1
     # ecore
     ueri[uindex] = ecore
