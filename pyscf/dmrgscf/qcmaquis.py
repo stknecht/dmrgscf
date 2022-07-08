@@ -245,7 +245,7 @@ class qcmDMRGCI(lib.StreamObject):
         print('hello from kernel - 2e ints are')
         print(eri)
         print('hello from kernel - ecore is {}'.format(ecore))
-        # setHAM(self, h1e, eri, norb, nelec, ecore)
+        setHAM(self, h1e, eri, norb, nelec, ecore)
         #writeDMRGConfFile(self, nelec, fciRestart)
         #if self.verbose >= logger.DEBUG1:
         #    inFile = os.path.join(self.runtimeDir, self.configFile)
@@ -276,12 +276,45 @@ class qcmDMRGCI(lib.StreamObject):
 
         return calc_e, roots
 
-    def setHAM():
+def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
 
-        if isinstance(nelec, (int, numpy.integer)):
-            neleca = nelec//2 + nelec%2
-            nelecb = nelec - neleca
-        else :
-            neleca, nelecb = nelec
+    if isinstance(nelec, (int, numpy.integer)):
+        neleca = nelec//2 + nelec%2
+        nelecb = nelec - neleca
+    else :
+        neleca, nelecb = nelec
 
-        # qcmUPINT()
+    ueri, ieri = get_unique_eri(eri,norb)
+    # qcmUPINT()
+
+def get_unique_eri(eri, nmo, tol=1e-99):
+    npair = nmo*(nmo+1)//2
+
+    dim_eri = npair*(npair+1)//2
+
+    ueri = numpy.zeros( (  dim_eri) )
+    ieri = numpy.zeros( (4*dim_eri), dtype=numpy.int32 )
+
+    # assumes 4-fold symmetry (default in pySCF)
+    if eri.ndim == 2: # 4-fold symmetry
+        assert(eri.size == npair**2)
+        ij = 0
+        uindex = 0
+        for i in range(nmo):
+            for j in range(0, i+1):
+                kl = 0
+                for k in range(0, nmo):
+                    for l in range(0, k+1):
+                        if ij >= kl:
+                            if abs(eri[ij,kl]) > tol:
+                                print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ij,kl]))
+                                ueri[uindex] = eri[ij,kl]
+                                ieri[uindex] = i
+                                ieri[uindex+1] = j
+                                ieri[uindex+2] = k
+                                ieri[uindex+3] = l
+                                uindex += 1
+                        kl += 1
+                ij += 1
+    return ueri, ieri
+
