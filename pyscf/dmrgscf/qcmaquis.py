@@ -99,6 +99,13 @@ qcmSETSTATE.argtypes = [
     ctypes.c_int32,
 ]
 
+qcmSETKW    = libqcm.qcmaquis_interface_set_param
+qcmSETKW.restype = None
+qcmSETKW.argtypes = [
+    ctypes.c_char_p,
+    ctypes.c_char_p,
+]
+
 qcmOPT = libqcm.qcmaquis_interface_optimize
 qcmOPT.restype = None
 qcmOPT.argtypes = [
@@ -183,19 +190,11 @@ class qcmDMRGCI(lib.StreamObject):
 
     def get_size12(norb):
         sz = 0
-        p = 0
-        while p < norb:
-            q = 0
-            while q < norb:
-                r = 0
-                while r < min(p,q):
-                    s = r
-                    while s < norb:
+        for p in range(0, norb):
+            for q in range(0, norb):
+                for r in range(min(p,q), norb):
+                    for s in range(r, norb):
                         sz+=1
-                        s+=1
-                    r+=1
-                q+=1
-            p+=1
         return sz
 
     def make_rdm1(self, state, norb, nelec, link_index=None, **kwargs):
@@ -209,18 +208,18 @@ class qcmDMRGCI(lib.StreamObject):
         else:
           nelectrons = nelec[0]+nelec[1]
 
-        # The 2RDMs written by "save_spatial_twopdm_text" in BLOCK and STACKBLOCK
-        # are written as E2[i1,j2,k2,l1]
-        # and stored here as E2[i1,l1,j2,k2] (for PySCF purposes)
-        # This is NOT done with SQA in mind.
         sz = qcmDMRGCI.get_size12(norb)
-        rdm2 = numpy.zeros( (  sz) )
-        ints = numpy.zeros( (4*sz), dtype=numpy.int32 )
-        # qcmRDM12(ints, rdm2, sz)
+        rdm2 = numpy.ascontiguousarray(numpy.zeros( (  sz) ))
+        ints = numpy.ascontiguousarray(numpy.zeros( (4*sz),
+                                       dtype=numpy.int32 ),
+                                       dtype=numpy.int32)
+        # read packed 2-RDM from QCMaquis
+        qcmRDM12(ints, rdm2, sz)
 
-        twopdm = numpy.zeros( (norb, norb, norb, norb) )
+        # expand to full 2-RDM and reorder indices
+        twopdm = get_full_2rdm(rdm2, ints, sz, norb)
 
-        # (This is coherent with previous statement about indexes)
+        # (This is coherent with the previous statement about indices)
         onepdm = numpy.einsum('ikjj->ki', twopdm)
         onepdm /= (nelectrons-1)
         return onepdm, twopdm
@@ -235,13 +234,6 @@ class qcmDMRGCI(lib.StreamObject):
 
         if 'orbsym' in kwargs:
             self.orbsym = kwargs['orbsym']
-
-        print('hello from kernel - sz is {}'.format(qcmDMRGCI.get_size12(norb = norb)))
-        print('hello from kernel - 1e ints are')
-        print(h1e)
-        print('hello from kernel - 2e ints are')
-        print(eri)
-        print('hello from kernel - ecore is {}'.format(ecore))
 
         ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
         setHAM(self, h1e, eri, norb, nelec, ecore)
@@ -273,10 +265,6 @@ class qcmDMRGCI(lib.StreamObject):
 def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
 
     ueri, ieri, nint = get_unique_eri(h1e, eri, ecore, norb)
-    print(ueri)
-    print(ieri)
-    # print(ueri.flags['C_CONTIGUOUS'])
-    # print(ieri.flags['C_CONTIGUOUS'])
     qcmUPINT(ieri, ueri, nint)
 
 def setQCM(qcmDMRGCI, norb, nelec):
@@ -291,6 +279,8 @@ def setQCM(qcmDMRGCI, norb, nelec):
     qcmINIT(nele, norb, qcmDMRGCI.spin, (qcmDMRGCI.wfnsym - 1),
             None, qcmDMRGCI.tol, qcmDMRGCI.maxM, qcmDMRGCI.maxIter,
             None, -1, qcmDMRGCI.project.encode('utf-8'), qcmDMRGCI.twopdm)
+
+    qcmSETKW("MEASURE[1rdm]".encode('utf-8'), "0".encode('utf-8'))
 
 def runQCM(qcmDMRGCI, state):
 
@@ -353,3 +343,17 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
     ueri[uindex] = ecore
     return numpy.ascontiguousarray(ueri), numpy.ascontiguousarray(ieri,dtype=numpy.int32), dim_eri
 
+def get_full_2rdm(c2rdm, cindx, nelements, norb):
+    twopdm = numpy.zeros( (norb, norb, norb, norb) )
+    for i in range(0,nelements):
+        ii = 4*i
+        p = cindx[ii+0]
+        q = cindx[ii+1]
+        r = cindx[ii+2]
+        s = cindx[ii+3]
+        # reorder from E2[p1,q2,r2,s1] -> E2[p1,s1,q2,r2] (for PySCF purposes)
+        twopdm[p,s,q,r] = c2rdm[i]
+        twopdm[q,r,p,s] = c2rdm[i]
+        twopdm[r,q,s,p] = c2rdm[i]
+        twopdm[s,p,r,q] = c2rdm[i]
+    return twopdm
