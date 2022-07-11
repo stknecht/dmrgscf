@@ -105,8 +105,7 @@ these keywords.
 
 QCMaquis
 --------
-:class:`QCMaquis` is the main object to hold QCMaquis input parameters and results.
-:func:`qcmDMRGCI`  is a shortcut function quickly setup a DMRG-driven CASCI calculation.
+:class:`qcmDMRGCI` is the main object to hold QCMaquis input parameters and results.
 :func:`qcmDMRGSCF` is a shortcut function quickly setup a DMRG-driven CASSCF calculation.
 '''
 __version__ = '0.1.1'
@@ -118,6 +117,5 @@ from pyscf.dmrgscf import chemps2
 from pyscf.dmrgscf.chemps2 import CheMPS2
 
 from pyscf.dmrgscf import qcmaquis
-from pyscf.dmrgscf.qcmaquis import qcmDMRGCI
-# from pyscf.dmrgscf.qcmaquis import qcmDMRGCI, qcmDMRGSCF
+from pyscf.dmrgscf.qcmaquis import qcmDMRGCI, qcmDMRGSCF
 

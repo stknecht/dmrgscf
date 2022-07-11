@@ -133,6 +133,8 @@ class qcmDMRGCI(lib.StreamObject):
     '''
     def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1,
                  maxIter=10, project="myQCM"):
+
+        print("init again ... {}".format(project))
         self.mol = mol
         if mol is None:
             self.stdout = sys.stdout
@@ -142,7 +144,8 @@ class qcmDMRGCI(lib.StreamObject):
             self.verbose = mol.verbose
         self.outputlevel = 2
 
-        self.maxIter = 10
+        self.maxIter = maxIter
+        self.dmrg_switch_tol = 1e-3
         self.nroots  = 1
         self.weights = []
         self.wfnsym  = 1
@@ -262,6 +265,75 @@ class qcmDMRGCI(lib.StreamObject):
             print("Optimized energy: {}".format(calc_e))
         return calc_e, roots
 
+    def approx_kernel(self, h1e, eri, norb, nelec, fciRestart=None, ecore=0, **kwargs):
+        fciRestart = True
+
+        if self.nroots == 1:
+            roots = 0
+        else:
+            roots = range(self.nroots)
+
+        if 'orbsym' in kwargs:
+            self.orbsym = kwargs['orbsym']
+
+        ''' transfer Hamiltonian (1e- and 2e-integrals) to QCMaquis '''
+        setHAM(self, h1e, eri, norb, nelec, ecore)
+
+        ''' setup QCMaquis configuration '''
+        setQCM(self, norb, nelec)
+
+        ''' run QCMaquis '''
+        for i in range(0,self.nroots):
+            runQCM(self, i)
+            calc_e = eneQCM(self)
+            # if self.restart:
+            #     # Restart only the first iteration
+            #     self.restart = False
+            print("Optimized energy: {}".format(calc_e))
+        return calc_e, roots
+
+    def restart_scheduler_(self):
+        def callback(envs):
+            info_str = ""
+            self._restart = False
+            if (envs['norm_gorb'] < self.dmrg_switch_tol):
+                self._restart = True
+                info_str += "Orb grad < dmrg_switch_tol "
+            if 'norm_ddm' in envs and envs['norm_ddm'] < self.dmrg_switch_tol*10:
+                self._restart = True
+                info_str += "Norm_ddm < dmrg_switch_tol*10 "
+            if self._restart:
+                logger.debug(self, "%s, set DMRG restart", info_str)
+        return callback
+
+def qcmDMRGSCF(mf, norb, nelec, maxM=1000, tol=1.e-8,
+               maxIter=10, project="myQCM", *args, **kwargs):
+    '''Shortcut function to setup CASSCF using the QCMaquis-DMRG solver.
+    The DMRG solver is properly initialized in this function so that the 1-step
+    algorithm can be applied with DMRG-CASSCF.
+    Examples:
+    >>> mol = gto.M(atom='C 0 0 0; C 0 0 1')
+    >>> mf = scf.RHF(mol).run()
+    >>> mc = qcmDMRGSCF(mf, 4, 4)
+    >>> mc.kernel()
+    -74.414908818611522
+    '''
+    if getattr(mf, 'with_df', None):
+        mc = mcscf.DFCASSCF(mf, norb, nelec, *args, **kwargs)
+    else:
+        mc = mcscf.CASSCF(mf, norb, nelec, *args, **kwargs)
+    print("incoming project name is {}".format(project))
+    mc.fcisolver = qcmDMRGCI(mf.mol, maxM=maxM, tol=tol, maxIter=maxIter,
+                             project=project)
+    mc.callback = mc.fcisolver.restart_scheduler_()
+
+    if mc.chkfile == mc._scf._chkfile.name:
+        # Do not delete chkfile after mcscf
+        mc.chkfile = tempfile.mktemp(dir=settings.QCMSCRATCHDIR)
+        if not os.path.exists(settings.QCMSCRATCHDIR):
+            os.makedirs(settings.QCMSCRATCHDIR)
+    return mc
+
 def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
 
     ueri, ieri, nint = get_unique_eri(h1e, eri, ecore, norb)
@@ -274,6 +346,8 @@ def setQCM(qcmDMRGCI, norb, nelec):
        nele = nelec
     else:
        nele = nelec[0]+nelec[1]
+
+    print("set QCMaquis config ... N e-: {} norb: {} and Project={}".format(nele,norb,qcmDMRGCI.project))
 
     # DOES NOT work for symmetry yet, this requires the first none to provide the orbital symmetries
     qcmINIT(nele, norb, qcmDMRGCI.spin, (qcmDMRGCI.wfnsym - 1),
@@ -301,17 +375,26 @@ def eneQCM(qcmDMRGCI):
 def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
     npair = nmo*(nmo+1)//2
 
+    print("# 0: eri size is {}".format(eri.size))
+    if eri.size == nmo**4:
+        print('restore')
+        eri = ao2mo.restore(8, eri, nmo)
+
+    print("# 1: eri size is {}".format(eri.size))
+
     #                2e-             1e-   core-energy
     dim_eri = npair*(npair+1)//2 + npair + 1
 
     ueri = numpy.zeros( (  dim_eri) )
     ieri = numpy.zeros( (4*dim_eri), dtype=numpy.int32 )
 
-    # 2e-part: assumes 4-fold symmetry for eri (default in pySCF)
+    uindex = 0
+    print("eri dim is {}".format(eri.ndim))
+    # 2e-part: assume either 4-fold symmetry for eri (default in pySCF)
     if eri.ndim == 2: # 4-fold symmetry
+        print('4-fold ')
         assert(eri.size == npair**2)
         ij = 0
-        uindex = 0
         for i in range(nmo):
             for j in range(0, i+1):
                 kl = 0
@@ -328,13 +411,35 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
                                 uindex += 1
                         kl += 1
                 ij += 1
+    else: # 8-fold symmetry
+        print('8-fold ')
+        assert(eri.size == npair*(npair+1)//2)
+        ij = 0
+        ijkl = 0
+        for i in range(nmo):
+            for j in range(0, i+1):
+                kl = 0
+                for k in range(0, i+1):
+                    for l in range(0, k+1):
+                        if ij >= kl:
+                            if abs(eri[ijkl]) > tol:
+                                print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ijkl]))
+                                ueri[uindex] = eri[ijkl]
+                                ieri[4*uindex] = i+1
+                                ieri[4*uindex+1] = j+1
+                                ieri[4*uindex+2] = k+1
+                                ieri[4*uindex+3] = l+1
+                                uindex += 1
+                            ijkl += 1
+                        kl += 1
+                ij += 1
 
     # 1e-part
     ij = 0
     for i in range(nmo):
         for j in range(0, i+1):
             if abs(h1e[i,j]) > tol:
-                print('({},{}) = {} '.format(i+1, j+1,h1e[i,j]))
+                # print('({},{}) = {} '.format(i+1, j+1,h1e[i,j]))
                 ueri[uindex] = h1e[i,j]
                 ieri[4*uindex] = i+1
                 ieri[4*uindex+1] = j+1
@@ -357,3 +462,47 @@ def get_full_2rdm(c2rdm, cindx, nelements, norb):
         twopdm[r,q,s,p] = c2rdm[i]
         twopdm[s,p,r,q] = c2rdm[i]
     return twopdm
+
+if __name__ == '__main__':
+    from pyscf import gto
+    from pyscf import scf
+    b = 1.4
+    mol = gto.Mole()
+    mol.build(
+        verbose = 7,
+        output = 'out-dmrgci',
+        atom = [['H', (0.,0.,i-3.5)] for i in range(8)],
+        basis = {'H': 'sto-3g'},
+        symmetry = True
+    )
+    m = scf.RHF(mol)
+    m.scf()
+
+    mc = DMRGSCF(m, 4, 4)
+    mc.fcisolver.tol = 1e-9
+    emc_1 = mc.mc2step()[0]
+
+    mc = mcscf.CASCI(m, 4, 4)
+    mc.fcisolver = DMRGCI(mol)
+    emc_0 = mc.casci()[0]
+
+    b = 1.4
+    mol = gto.Mole()
+    mol.build(
+        verbose = 7,
+        output = 'out-casscf',
+        atom = [['H', (0.,0.,i-3.5)] for i in range(8)],
+        basis = {'H': 'sto-3g'},
+        symmetry = True
+    )
+    m = scf.RHF(mol)
+    m.scf()
+
+    mc = mcscf.CASSCF(m, 4, 4)
+    emc_1ref = mc.mc2step()[0]
+
+    mc = mcscf.CASCI(m, 4, 4)
+    emc_0ref = mc.casci()[0]
+
+    print('DMRGCI  = %.15g CASCI  = %.15g' % (emc_0, emc_0ref))
+    print('DMRGSCF = %.15g CASSCF = %.15g' % (emc_1, emc_1ref))
