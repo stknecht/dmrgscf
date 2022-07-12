@@ -116,6 +116,23 @@ qcmENERGY.restype = ctypes.c_double
 qcmENERGY.argtypes = [
 ]
 
+qcmOPT = libqcm.qcmaquis_interface_optimize
+qcmOPT.restype = None
+qcmOPT.argtypes = [
+]
+
+qcmIOD = libqcm.qcmaquis_interface_stdout
+qcmIOD.restype = None
+qcmIOD.argtypes = [
+    ctypes.c_char_p,
+]
+
+qcmIOR = libqcm.qcmaquis_interface_restore_stdout
+qcmIOR.restype = None
+qcmIOR.argtypes = [
+]
+
+
 
 class qcmDMRGCI(lib.StreamObject):
     '''QCMaquis program interface and the object to hold QCMaquis program input parameters.
@@ -358,14 +375,21 @@ def setQCM(qcmDMRGCI, norb, nelec):
 
 def runQCM(qcmDMRGCI, state):
 
+    # I/O redirect
+    qcmIO = qcmDMRGCI.project + ".optimization.out"
+    qcmIOD(qcmIO.encode('utf-8'))
+
     # update # of sweeps
     # qcmaquis_interface_set_nsweeps(nsweeps_,ngrowsweeps_,nmainsweeps_);
 
     # set I/O files for state i
-    qcmSETSTATE(state);
+    qcmSETSTATE(state)
 
     # given state i: optimize MPS + calculate <MPS|O|MPS> for a list of O's
-    qcmOPT();
+    qcmOPT()
+
+    # restore I/O
+    qcmIOR()
 
 def eneQCM(qcmDMRGCI):
 
@@ -375,12 +399,9 @@ def eneQCM(qcmDMRGCI):
 def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
     npair = nmo*(nmo+1)//2
 
-    print("# 0: eri size is {}".format(eri.size))
     if eri.size == nmo**4:
         print('restore')
         eri = ao2mo.restore(8, eri, nmo)
-
-    print("# 1: eri size is {}".format(eri.size))
 
     #                2e-             1e-   core-energy
     dim_eri = npair*(npair+1)//2 + npair + 1
@@ -389,10 +410,8 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
     ieri = numpy.zeros( (4*dim_eri), dtype=numpy.int32 )
 
     uindex = 0
-    print("eri dim is {}".format(eri.ndim))
     # 2e-part: assume either 4-fold symmetry for eri (default in pySCF)
     if eri.ndim == 2: # 4-fold symmetry
-        print('4-fold ')
         assert(eri.size == npair**2)
         ij = 0
         for i in range(nmo):
@@ -402,7 +421,7 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
                     for l in range(0, k+1):
                         if ij >= kl:
                             if abs(eri[ij,kl]) > tol:
-                                print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ij,kl]))
+                                # print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ij,kl]))
                                 ueri[uindex] = eri[ij,kl]
                                 ieri[4*uindex] = i+1
                                 ieri[4*uindex+1] = j+1
@@ -412,7 +431,7 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
                         kl += 1
                 ij += 1
     else: # 8-fold symmetry
-        print('8-fold ')
+        # print('8-fold ')
         assert(eri.size == npair*(npair+1)//2)
         ij = 0
         ijkl = 0
@@ -423,7 +442,7 @@ def get_unique_eri(h1e, eri, ecore, nmo, tol=1e-99):
                     for l in range(0, k+1):
                         if ij >= kl:
                             if abs(eri[ijkl]) > tol:
-                                print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ijkl]))
+                                # print('({},{},{},{}) = {} '.format(i+1, j+1, k+1, l+1,eri[ijkl]))
                                 ueri[uindex] = eri[ijkl]
                                 ieri[4*uindex] = i+1
                                 ieri[4*uindex+1] = j+1
