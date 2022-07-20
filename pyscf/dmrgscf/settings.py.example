@@ -29,3 +29,4 @@ PYCHEMPS2BIN = '/path/to/CheMPS2/build/PyCheMPS2/PyCheMPS2.so'
 # Use QCMaquis as the FCI solver for CASSCF
 QCMLIB = '/home/cds/stknecht/prog/standalone-qcm/install-for-pyscf/lib/libmaquis_dmrg.so'
 QCMVERSION = None
+QCMSCRATCHDIR = os.path.join(lib.param.TMPDIR, str(os.getpid()))
