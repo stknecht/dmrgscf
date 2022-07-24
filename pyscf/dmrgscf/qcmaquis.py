@@ -132,6 +132,17 @@ qcmIOR.restype = None
 qcmIOR.argtypes = [
 ]
 
+qcmFIEDLER = libqcm.qcmaquis_interface_run_starting_guess
+qcmFIEDLER.restype = None
+qcmFIEDLER.argtypes = [
+    ctypes.c_int32,
+    ctypes.c_char_p,
+    ctypes.c_bool,
+    ctypes.c_bool,
+    ctypes.c_char_p,
+    # ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    ctypes.c_void_p, 
+]
 
 
 class qcmDMRGCI(lib.StreamObject):
@@ -151,7 +162,7 @@ class qcmDMRGCI(lib.StreamObject):
     def __init__(self, mol=None, maxM=None, tol=None, num_thrds=1,
                  maxIter=10, project="myQCM"):
 
-        print("init again ... {}".format(project))
+        # print("init again ... {}".format(project))
         self.mol = mol
         if mol is None:
             self.stdout = sys.stdout
@@ -160,6 +171,11 @@ class qcmDMRGCI(lib.StreamObject):
             self.stdout = mol.stdout
             self.verbose = mol.verbose
         self.outputlevel = 2
+
+        self.status = {
+            "integrals": False,
+            "parameters": False,
+        }
 
         self.maxIter = maxIter
         self.dmrg_switch_tol = 1e-3
@@ -323,6 +339,23 @@ class qcmDMRGCI(lib.StreamObject):
                 logger.debug(self, "%s, set DMRG restart", info_str)
         return callback
 
+    def get_orbital_order(self, nasht):
+        """Calculate the Fiedler vector (optimal orbital-ordering) for a DMRG run
+        Args:
+            nasht (:obj:`int`):  Number of active shells, that is the number
+                of active (partially-occupied) orbitals within the CAS space.
+        Returns:
+            ooorder (:obj:`str`): optimal orbital ordering based on the calculation
+                of a Fiedler vector.
+        """
+        ooorder = "0,"*(nasht-1) + "0"
+        if(self.status["integrals"] and self.status["parameters"]):
+            print("will call Fiedler... {}".format(ooorder))
+            qcmFIEDLER(self.nroots, self.project.encode('utf-8'), True, 
+                False, ooorder.encode('utf-8'), None)
+            print("have called Fiedler... {}".format(ooorder))
+        return ooorder
+
 def qcmDMRGSCF(mf, norb, nelec, maxM=1000, tol=1.e-8,
                maxIter=10, project="myQCM", *args, **kwargs):
     '''Shortcut function to setup CASSCF using the QCMaquis-DMRG solver.
@@ -356,6 +389,8 @@ def setHAM(qcmDMRGCI, h1e, eri, norb, nelec, ecore):
     ueri, ieri, nint = get_unique_eri(h1e, eri, ecore, norb)
     qcmUPINT(ieri, ueri, nint)
 
+    qcmDMRGCI.status["integrals"] = True
+
 def setQCM(qcmDMRGCI, norb, nelec):
 
     nele = 0
@@ -364,14 +399,14 @@ def setQCM(qcmDMRGCI, norb, nelec):
     else:
        nele = nelec[0]+nelec[1]
 
-    print("set QCMaquis config ... N e-: {} norb: {} and Project={}".format(nele,norb,qcmDMRGCI.project))
-
     # DOES NOT work for symmetry yet, this requires the first none to provide the orbital symmetries
     qcmINIT(nele, norb, qcmDMRGCI.spin, (qcmDMRGCI.wfnsym - 1),
             None, qcmDMRGCI.tol, qcmDMRGCI.maxM, qcmDMRGCI.maxIter,
             None, -1, qcmDMRGCI.project.encode('utf-8'), qcmDMRGCI.twopdm)
 
     qcmSETKW("MEASURE[1rdm]".encode('utf-8'), "0".encode('utf-8'))
+
+    qcmDMRGCI.status["parameters"] = True
 
 def runQCM(qcmDMRGCI, state):
 
