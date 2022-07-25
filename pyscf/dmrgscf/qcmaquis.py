@@ -142,6 +142,7 @@ qcmFIEDLER.argtypes = [
     ctypes.c_char_p,
     # ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
     ctypes.c_void_p, 
+    ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
 ]
 
 
@@ -348,13 +349,19 @@ class qcmDMRGCI(lib.StreamObject):
             ooorder (:obj:`str`): optimal orbital ordering based on the calculation
                 of a Fiedler vector.
         """
-        ooorder = "0,"*(nasht-1) + "0"
+        oorder = "0,"*(nasht-1) + "0"
         if(self.status["integrals"] and self.status["parameters"]):
-            print("will call Fiedler... {}".format(ooorder))
+            fiedler = numpy.ascontiguousarray(numpy.zeros( nasht,
+                                       dtype=numpy.int32 ),
+                                       dtype=numpy.int32)
             qcmFIEDLER(self.nroots, self.project.encode('utf-8'), True, 
-                False, ooorder.encode('utf-8'), None)
-            print("have called Fiedler... {}".format(ooorder))
-        return ooorder
+                False, oorder.encode('utf-8'), None, fiedler)
+            oorder = ""
+            for x in fiedler:
+                oorder += str(x) + ","
+            oorder = oorder.rstrip(oorder[-1]) 
+
+        return oorder
 
 def qcmDMRGSCF(mf, norb, nelec, maxM=1000, tol=1.e-8,
                maxIter=10, project="myQCM", *args, **kwargs):
