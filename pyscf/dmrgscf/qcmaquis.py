@@ -143,6 +143,8 @@ qcmFIEDLER.argtypes = [
     # ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
     ctypes.c_void_p, 
     ndpointer(ctypes.c_int32, flags="C_CONTIGUOUS"),
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+    ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
 ]
 
 
@@ -354,14 +356,41 @@ class qcmDMRGCI(lib.StreamObject):
             fiedler = numpy.ascontiguousarray(numpy.zeros( nasht,
                                        dtype=numpy.int32 ),
                                        dtype=numpy.int32)
+
+            s1 = numpy.ascontiguousarray(numpy.zeros( nasht))
+            mutI = numpy.ascontiguousarray(numpy.zeros( nasht*nasht))
+
             qcmFIEDLER(self.nroots, self.project.encode('utf-8'), True, 
-                False, oorder.encode('utf-8'), None, fiedler)
+                False, oorder.encode('utf-8'), None, fiedler, s1, mutI)
             oorder = ""
             for x in fiedler:
                 oorder += str(x) + ","
-            oorder = oorder.rstrip(oorder[-1]) 
+            oorder = oorder.rstrip(oorder[-1])
 
         return oorder
+
+    def get_entropy_measures(self, nasht):
+        """Calculate the entropy measure (single-site entropy
+               and mutual information from a DMRG run
+        Args:
+            nasht (:obj:`int`):  Number of active shells, that is the number
+                of active (partially-occupied) orbitals within the CAS space.
+        Returns:
+            s1 (:obj:`np.array(float)`): single-site entropy
+            mutI (:obj:`np.array(float)`): mutual information
+        """
+        oorder = "0,"*(nasht-1) + "0"
+        if(self.status["integrals"] and self.status["parameters"]):
+            fiedler = numpy.ascontiguousarray(numpy.zeros( nasht,
+                                       dtype=numpy.int32 ),
+                                       dtype=numpy.int32)
+
+            s1 = numpy.ascontiguousarray(numpy.zeros( nasht))
+            mutI = numpy.ascontiguousarray(numpy.zeros( nasht*nasht))
+
+            qcmFIEDLER(self.nroots, self.project.encode('utf-8'), True, 
+                False, oorder.encode('utf-8'), None, fiedler, s1, mutI)
+        return s1, mutI
 
 def qcmDMRGSCF(mf, norb, nelec, maxM=1000, tol=1.e-8,
                maxIter=10, project="myQCM", *args, **kwargs):
